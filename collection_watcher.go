@@ -2,11 +2,7 @@ package mongo_watcher
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"github.com/techpro-studio/gocache"
 	"github.com/techpro-studio/gomongo"
-	"github.com/techpro-studio/mongo_watcher/transport"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -19,44 +15,40 @@ type MongoSchema[T any] interface {
 	gomongo.ModelConverted[T]
 }
 
-type CollectionWatcher[T any, M MongoSchema[T]] struct {
-	collection                 *mongo.Collection
-	cache                      gocache.TypedCache[T]
-	trans                      transport.Transport
-	preheatCache               bool
-	dispatchUpdateInGlobalRoom bool
-	roomPrefix                 string
+type MongoEvent string
+
+const MongoEventInsert MongoEvent = "insert"
+const MongoEventUpdate MongoEvent = "update"
+const MongoEventDelete MongoEvent = "delete"
+const MongoEventReplace MongoEvent = "replace"
+
+type Event[T any] struct {
+	Type         MongoEvent
+	FullDocument *T
+	Key          string
 }
 
-func NewCollectionWatcher[T any, M MongoSchema[T]](collection *mongo.Collection, cache gocache.TypedCache[T], trans transport.Transport, roomPrefix string, dispatchUpdateInGlobalRoom bool, preheatCache bool) *CollectionWatcher[T, M] {
-	return &CollectionWatcher[T, M]{collection: collection, cache: cache, trans: trans, roomPrefix: roomPrefix, dispatchUpdateInGlobalRoom: dispatchUpdateInGlobalRoom, preheatCache: preheatCache}
+type EventHandler[T any] interface {
+	Setup(ctx context.Context, collection *mongo.Collection)
+	HandleEvent(ctx context.Context, event *Event[T]) error
+}
+
+type CollectionWatcher[T any, M MongoSchema[T]] struct {
+	collection    *mongo.Collection
+	eventHandlers []EventHandler[T]
+}
+
+func NewCollectionWatcher[T any, M MongoSchema[T]](collection *mongo.Collection, eventHandlers []EventHandler[T]) *CollectionWatcher[T, M] {
+	return &CollectionWatcher[T, M]{collection: collection, eventHandlers: eventHandlers}
 }
 
 func (c *CollectionWatcher[T, M]) Watch(ctx context.Context) {
-
-	if c.preheatCache {
-		find, err := c.collection.Find(ctx, bson.M{})
-		if err != nil {
-			return
-		}
-		var all []M
-		err = find.All(ctx, &all)
-		if err != nil {
-			log.Fatalf("failed to preheat cache. fetch all: %v", err)
-		}
-		for _, m := range all {
-			err := c.cache.Set(ctx, m.GetId().Hex(), *m.ToModel())
-			if err != nil {
-				log.Fatalf("failed to cache item: %v", err)
-			}
-		}
-	}
 
 	changeStreamOptions := options.ChangeStream().SetFullDocument(options.UpdateLookup)
 
 	pipeline := mongo.Pipeline{
 		{{"$match", bson.D{
-			{"operationType", bson.D{{"$in", bson.A{"insert", "update", "replace", "delete"}}}},
+			{"operationType", bson.D{{"$in", bson.A{MongoEventInsert, MongoEventUpdate, MongoEventReplace, MongoEventDelete}}}},
 		}}},
 	}
 	changeStream, err := c.collection.Watch(ctx, pipeline, changeStreamOptions)
@@ -87,65 +79,34 @@ func (c *CollectionWatcher[T, M]) Watch(ctx context.Context) {
 
 		key := event.DocumentKey.ID.Hex()
 
-		var sendData map[string]string
+		var toHandle Event[T]
 
-		switch event.Type {
-		case "insert", "update", "replace":
+		switch MongoEvent(event.Type) {
+		case MongoEventInsert, MongoEventUpdate, MongoEventReplace:
 			// Handle insert, update, and replace by caching the document
 			data := *event.FullDocument.ToModel()
 
-			log.Printf("Got %s %s:%s", event.Type, c.roomPrefix, key)
-
-			err := c.cache.Set(ctx, key, data)
-			if err != nil {
-				log.Printf("Failed to cache %s: %v\n", event.Type, err)
-				continue
+			toHandle = Event[T]{
+				Type:         MongoEvent(event.Type),
+				FullDocument: &data,
+				Key:          key,
 			}
 
-			jsonData, err := json.Marshal(data)
-			if err != nil {
-				log.Printf("Error marshalling data to JSON: %v", err)
-				continue
+		case MongoEventDelete:
+			toHandle = Event[T]{
+				Type: MongoEvent(event.Type),
+				Key:  key,
 			}
-
-			sendData = map[string]string{"payload": string(jsonData)}
-
-		case "delete":
-			// Handle delete by removing the key from the cache
-
-			log.Printf("Got delete event %s:%s", c.roomPrefix, key)
-
-			err := c.cache.Delete(ctx, key)
-			if err != nil {
-				log.Printf("Failed to remove from cache: %v\n", err)
-			}
-
-			sendData = map[string]string{"id": key}
-
 		default:
 			log.Printf("Unhandled operationType: %s", event.Type)
 		}
 
-		err = c.trans.SendMessage(ctx, &transport.Message{
-			Data:  sendData,
-			Room:  fmt.Sprintf("%s.%s", c.roomPrefix, key),
-			Event: event.Type,
-		})
-		if err != nil {
-			log.Printf("Failed to send %s event: %v\n", event.Type, err)
-			continue
-		}
-
-		if c.dispatchUpdateInGlobalRoom {
-			err = c.trans.SendMessage(ctx, &transport.Message{
-				Data:  sendData,
-				Room:  c.roomPrefix,
-				Event: event.Type,
-			})
+		for _, handler := range c.eventHandlers {
+			err := handler.HandleEvent(ctx, &toHandle)
 			if err != nil {
-				log.Printf("Failed to send global update: %v\n", err)
-				continue
+				log.Printf("Error handling event: %v\n", err)
 			}
 		}
+
 	}
 }

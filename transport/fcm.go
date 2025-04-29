@@ -2,8 +2,10 @@ package transport
 
 import (
 	"context"
+	"encoding/base64"
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
+	"google.golang.org/api/option"
 	"log"
 )
 
@@ -12,10 +14,17 @@ type FCMTransport struct {
 	fcm *messaging.Client
 }
 
-func NewFCMTransport(ctx context.Context) (*FCMTransport, error) {
+func NewFCMTransport(ctx context.Context, firebasePrivateKeyB64 string) (*FCMTransport, error) {
 	var err error
 
-	app, err := firebase.NewApp(ctx, nil, nil)
+	credJSON, err := base64.StdEncoding.DecodeString(firebasePrivateKeyB64)
+	if err != nil {
+		return nil, err
+	}
+
+	opt := option.WithCredentialsJSON(credJSON)
+
+	app, err := firebase.NewApp(ctx, nil, opt)
 
 	if err != nil {
 		return nil, err
