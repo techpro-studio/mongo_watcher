@@ -9,21 +9,21 @@ import (
 	"log"
 )
 
-type TransportEventHandler[T any, M MongoSchema[T]] struct {
+type TransportEventHandler[T any] struct {
 	trans                transport.Transport
 	roomPrefix           string
 	dispatchInGlobalRoom bool
 }
 
-func NewTransportEventHandler[T any, M MongoSchema[T]](trans transport.Transport, roomPrefix string, dispatchInGlobalRoom bool) *TransportEventHandler[T, M] {
-	return &TransportEventHandler[T, M]{trans: trans, roomPrefix: roomPrefix, dispatchInGlobalRoom: dispatchInGlobalRoom}
+func NewTransportEventHandler[T any](trans transport.Transport, roomPrefix string, dispatchInGlobalRoom bool) *TransportEventHandler[T] {
+	return &TransportEventHandler[T]{trans: trans, roomPrefix: roomPrefix, dispatchInGlobalRoom: dispatchInGlobalRoom}
 }
 
-func (t *TransportEventHandler[T, M]) Setup(ctx context.Context, collection *mongo.Collection) {
+func (t *TransportEventHandler[T]) Setup(ctx context.Context, collection *mongo.Collection) {
 	log.Printf("Setting up transport event handler for %s", collection.Name())
 }
 
-func (t *TransportEventHandler[T, M]) HandleEvent(ctx context.Context, event *Event[T]) error {
+func (t *TransportEventHandler[T]) HandleEvent(ctx context.Context, event *Event[T]) error {
 	var sendData map[string]string
 	switch event.Type {
 	case MongoEventDelete:
