@@ -10,13 +10,12 @@ import (
 )
 
 type TransportEventHandler[T any] struct {
-	trans                transport.Transport
-	roomPrefix           string
-	dispatchInGlobalRoom bool
+	trans      transport.Transport
+	roomFormat string
 }
 
-func NewTransportEventHandler[T any](trans transport.Transport, roomPrefix string, dispatchInGlobalRoom bool) *TransportEventHandler[T] {
-	return &TransportEventHandler[T]{trans: trans, roomPrefix: roomPrefix, dispatchInGlobalRoom: dispatchInGlobalRoom}
+func NewTransportEventHandler[T any](trans transport.Transport, roomFormat string) *TransportEventHandler[T] {
+	return &TransportEventHandler[T]{trans: trans, roomFormat: roomFormat}
 }
 
 func (t *TransportEventHandler[T]) Setup(ctx context.Context, collection *mongo.Collection) {
@@ -38,22 +37,12 @@ func (t *TransportEventHandler[T]) HandleEvent(ctx context.Context, event *Event
 
 	err := t.trans.SendMessage(ctx, &transport.Message{
 		Data:  sendData,
-		Room:  fmt.Sprintf("%s.%s", t.roomPrefix, event.Key),
+		Room:  fmt.Sprintf(t.roomFormat, event.Key),
 		Event: string(event.Type),
 	})
 	if err != nil {
 		return err
 	}
 
-	if t.dispatchInGlobalRoom {
-		err = t.trans.SendMessage(ctx, &transport.Message{
-			Data:  sendData,
-			Room:  t.roomPrefix,
-			Event: string(event.Type),
-		})
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
