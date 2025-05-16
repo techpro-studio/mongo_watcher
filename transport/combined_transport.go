@@ -6,14 +6,14 @@ import (
 )
 
 type CombinedTransport struct {
-	children []Transport
+	children []RoomTransport
 }
 
 func NewCombinedTransport() *CombinedTransport {
-	return &CombinedTransport{children: []Transport{}}
+	return &CombinedTransport{children: []RoomTransport{}}
 }
 
-func (c *CombinedTransport) AddChild(t Transport) {
+func (c *CombinedTransport) AddChild(t RoomTransport) {
 	c.children = append(c.children, t)
 }
 
@@ -21,7 +21,7 @@ func (c *CombinedTransport) Count() int {
 	return len(c.children)
 }
 
-func (c *CombinedTransport) SendMessage(ctx context.Context, message *Message) error {
+func (c *CombinedTransport) SendMessage(ctx context.Context, message *RoomMessage) error {
 	var errs []error
 	for _, child := range c.children {
 		if err := child.SendMessage(ctx, message); err != nil {

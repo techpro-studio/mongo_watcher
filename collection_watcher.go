@@ -23,9 +23,10 @@ const MongoEventDelete MongoEvent = "delete"
 const MongoEventReplace MongoEvent = "replace"
 
 type Event[T any] struct {
-	Type         MongoEvent
-	FullDocument *T
-	Key          string
+	Type                     MongoEvent
+	FullDocument             *T
+	FullDocumentBeforeChange *T
+	Key                      string
 }
 
 type EventHandler[T any] interface {
@@ -66,9 +67,10 @@ func (c *CollectionWatcher[T, M]) Watch(ctx context.Context) {
 
 	for changeStream.Next(ctx) {
 		var event struct {
-			FullDocument M      `bson:"fullDocument"`
-			Type         string `bson:"operationType"`
-			DocumentKey  struct {
+			FullDocument             M      `bson:"fullDocument"`
+			FullDocumentBeforeChange *M     `bson:"fullDocumentBeforeChange"`
+			Type                     string `bson:"operationType"`
+			DocumentKey              struct {
 				ID primitive.ObjectID `bson:"_id"`
 			} `bson:"documentKey"`
 		}
@@ -86,10 +88,16 @@ func (c *CollectionWatcher[T, M]) Watch(ctx context.Context) {
 			// Handle insert, update, and replace by caching the document
 			data := *event.FullDocument.ToModel()
 
+			var dataBeforeChange *T
+			if event.FullDocumentBeforeChange != nil {
+				dataBeforeChange = (*event.FullDocumentBeforeChange).ToModel()
+			}
+
 			toHandle = Event[T]{
-				Type:         MongoEvent(event.Type),
-				FullDocument: &data,
-				Key:          key,
+				Type:                     MongoEvent(event.Type),
+				FullDocument:             &data,
+				FullDocumentBeforeChange: dataBeforeChange,
+				Key:                      key,
 			}
 
 		case MongoEventDelete:

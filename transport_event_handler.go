@@ -10,11 +10,11 @@ import (
 )
 
 type TransportEventHandler[T any] struct {
-	trans      transport.Transport
+	trans      transport.RoomTransport
 	roomFormat string
 }
 
-func NewTransportEventHandler[T any](trans transport.Transport, roomFormat string) *TransportEventHandler[T] {
+func NewTransportEventHandler[T any](trans transport.RoomTransport, roomFormat string) *TransportEventHandler[T] {
 	return &TransportEventHandler[T]{trans: trans, roomFormat: roomFormat}
 }
 
@@ -35,7 +35,7 @@ func (t *TransportEventHandler[T]) HandleEvent(ctx context.Context, event *Event
 		sendData = map[string]string{"payload": string(jsonData)}
 	}
 
-	err := t.trans.SendMessage(ctx, &transport.Message{
+	err := t.trans.SendMessage(ctx, &transport.RoomMessage{
 		Data:  sendData,
 		Room:  fmt.Sprintf(t.roomFormat, event.Key),
 		Event: string(event.Type),

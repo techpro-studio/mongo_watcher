@@ -38,12 +38,25 @@ func NewFCMTransport(ctx context.Context, firebasePrivateKeyB64 string) (*FCMTra
 	return &FCMTransport{app: app, fcm: fcm}, nil
 }
 
-func (f *FCMTransport) SendMessage(ctx context.Context, message *Message) error {
+func (f *FCMTransport) SendMessage(ctx context.Context, message *RoomMessage) error {
 	fcmMessage := &messaging.Message{
 		Data:  message.Data,
 		Topic: message.Topic(),
+		APNS: &messaging.APNSConfig{
+			Headers: map[string]string{
+				"apns-priority": "5",
+			},
+			Payload: &messaging.APNSPayload{
+				Aps: &messaging.Aps{
+					ContentAvailable: true,
+				},
+			},
+		},
 	}
-	response, err := f.fcm.Send(ctx, fcmMessage)
+	return f.SendFCMMessage(ctx, fcmMessage)
+}
+func (f *FCMTransport) SendFCMMessage(ctx context.Context, message *messaging.Message) error {
+	response, err := f.fcm.Send(ctx, message)
 	if err != nil {
 		log.Printf("error sending FCM message: %v\n", err)
 	} else {

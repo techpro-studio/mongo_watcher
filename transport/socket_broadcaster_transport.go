@@ -24,7 +24,7 @@ func NewSocketIoBroadcasterTransport(baseUrl, key string) *SocketIoBroadcasterTr
 	}
 }
 
-func (t *SocketIoBroadcasterTransport) SendMessage(ctx context.Context, message *Message) error {
+func (t *SocketIoBroadcasterTransport) SendMessage(ctx context.Context, message *RoomMessage) error {
 	message.Data["topic"] = message.Topic()
 	final := map[string]any{
 		"event": message.Event,
